@@ -1,6 +1,7 @@
 import os
 import x
 
+from typing import Tuple
 from queue import Queue
 from PyQt5 import uic
 from PyQt5.QtWidgets import QMainWindow, QFileDialog, QTableWidgetItem, QMessageBox
@@ -29,6 +30,7 @@ class MainWindow(QMainWindow):
                     max_thread=self.spinBox_3.value(),
                     duration=self.spinBox_2.value()
                 )
+                self._dowloader.updated_downloaded.connect(lambda row, value: self.tableWidget.setItem(row, 1, QTableWidgetItem(str(value))))
                 self._dowloader.finished.connect(self._task_finished)
                 self._dowloader.start()
             case 'Dừng':
@@ -62,10 +64,10 @@ class MainWindow(QMainWindow):
         self.pushButton_2.setText('Bắt đầu')
         self._dowloader = None
 
-    def _get_usernames_queue(self):
+    def _get_usernames_queue(self) -> Queue[Tuple[int, str]]:
         q = Queue()
         for row in range(self.tableWidget.rowCount()):
             username = self.tableWidget.item(row, 0).text()
-            q.put_nowait(username)
+            q.put_nowait((row, username))
         return q
     
