@@ -86,6 +86,8 @@ class DownloaderRunnable(QRunnable):
 
             try:
                 user_id = api.get_rest_id(username)
+                print(username, user_id)
+                
                 if not user_id:
                     self._parent.updated_downloaded.emit(row, -1)
                     continue
