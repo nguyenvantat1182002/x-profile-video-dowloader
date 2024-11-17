@@ -2,11 +2,19 @@ import requests
 import re
 import json
 
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from typing import Optional, Tuple, List
 
 
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+
+
+def get_username_from_url(url):
+    parsed_url = urlparse(url)
+    path = parsed_url.path
+    username = path.strip("/")
+    return username
 
 
 @dataclass
