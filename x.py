@@ -2,10 +2,17 @@ import requests
 import re
 import json
 
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Tuple, List
 
 
 DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36'
+
+
+@dataclass
+class VideoInfo:
+    url: str
+    duration_millis: int
 
 
 class X:
@@ -25,7 +32,7 @@ class X:
 
         self._base_url = 'https://x.com/i/api/graphql'
 
-    def get_media(self, user_id: str, cursor: Optional[str] = None):
+    def get_media(self, user_id: str, cursor: Optional[str] = None) -> Tuple[List[VideoInfo], str]:
         variables = {
             "userId": user_id,
             "count": 20,
@@ -49,16 +56,24 @@ class X:
         response = self._request.get(f'{self._base_url}/HaouMjBviBKKTYZGV_9qtg/UserMedia', params=params)
         data = response.json()
 
-        items = data['data']['user']['result']['timeline_v2']['timeline']['instructions'][-1]['entries'][0]['content']['items']
+        entries =  data['data']['user']['result']['timeline_v2']['timeline']['instructions'][-1]['entries']
+        videos = []
+        
+        if len(entries) > 2:
+            items = entries[0]['content']['items']
 
-        for item in items:
-            entities = item['item']['itemContent']['tweet_results']['result']['legacy']['entities']
-            if 'media'in entities:
-                entities = entities['media'][-1]
-                if 'video_info' in entities:
-                    print(item['entryId'])
+            for item in items:
+                entities = item['item']['itemContent']['tweet_results']['result']['legacy']['entities']
+                if 'media'in entities:
+                    entities = entities['media'][-1]
+                    if 'video_info' in entities:
+                        video_info = entities['video_info']
+                        duration_millis = video_info['duration_millis']
+                        video_url = video_info['variants'][-1]['url']
 
-        return items
+                        videos.append(VideoInfo(video_url, duration_millis))
+
+        return videos, entries[-1]['content']['value']
 
     def get_rest_id(self, screen_name: str) -> str:
         params = {
