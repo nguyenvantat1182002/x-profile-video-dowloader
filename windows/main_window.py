@@ -1,8 +1,10 @@
 import os
 import x
 
+from queue import Queue
 from PyQt5 import uic
-from PyQt5.QtWidgets import QMainWindow, QFileDialog, QTableWidgetItem
+from PyQt5.QtWidgets import QMainWindow, QFileDialog, QTableWidgetItem, QMessageBox
+from .threads import DownloaderThread
 
 
 class MainWindow(QMainWindow):
@@ -14,12 +16,24 @@ class MainWindow(QMainWindow):
         self.pushButton_2.clicked.connect(self.pushButton_2_click)
         self.pushButton_3.clicked.connect(self.pushButton_3_click)
 
+        self._dowloader = None
+
     def pushButton_2_click(self):
         match self.pushButton_2.text():
             case 'Bắt đầu':
-                pass
+                self.pushButton_2.setText('Dừng')
+
+                self._dowloader = DownloaderThread(
+                    usernames=self._get_usernames_queue(),
+                    max_videos=self.spinBox.value(),
+                    max_thread=self.spinBox_3.value(),
+                    duration=self.spinBox_2.value()
+                )
+                self._dowloader.finished.connect(self._task_finished)
+                self._dowloader.start()
             case 'Dừng':
-                pass
+                self.pushButton_2.setText('Dừng...')
+                self._dowloader.stop = True
 
     def pushButton_3_click(self):
         os.startfile(os.path.join(os.getcwd(), 'output'))
@@ -42,4 +56,16 @@ class MainWindow(QMainWindow):
 
         self.label.setText(f'Profile links: {self.tableWidget.rowCount()}')
         self.lineEdit.setText(file_path)
-        
+
+    def _task_finished(self):
+        QMessageBox.information(self, 'Thông báo', 'Đã dừng' if self._dowloader.stop else 'Hoàn thành')
+        self.pushButton_2.setText('Bắt đầu')
+        self._dowloader = None
+
+    def _get_usernames_queue(self):
+        q = Queue()
+        for row in range(self.tableWidget.rowCount()):
+            username = self.tableWidget.item(row, 0).text()
+            q.put_nowait(username)
+        return q
+    
