@@ -58,8 +58,8 @@ class X:
 
         if proxy:
             self._request.proxies = {
-                'http': proxy,
-                'https': proxy
+                'http': f'http://{proxy}',
+                'https': f'http://{proxy}'
             }
 
         self._base_url = 'https://x.com/i/api/graphql'

@@ -2,12 +2,24 @@ import x
 import os
 import json
 import secrets
+import random
 
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
-from typing import Tuple
+from typing import Tuple, Optional
 from queue import Queue
 from PyQt5.QtCore import QThread, QThreadPool, QRunnable, pyqtSignal, QMutex, QMutexLocker
+
+
+def get_random_proxy() -> Optional[str]:
+    file_path = os.path.join(os.getcwd(), 'proxies.txt')
+
+    if os.path.exists(file_path):
+        with open(file_path, encoding='utf-8') as file:
+            lines = file.read().splitlines()
+            return random.choice(lines)
+
+    return None
 
 
 @dataclass
@@ -16,7 +28,6 @@ class Config:
     cookie: str
     time_to_wait_for_next_videos: int = field(default=15)
     max_page: int = field(default=300)
-    proxy: str = field(default=None)
 
     @classmethod
     def load(cls) -> 'Config':
@@ -89,8 +100,9 @@ class DownloaderRunnable(QRunnable):
                     break
 
                 row, username = self._parent.username.get_nowait()
+                proxy = get_random_proxy()
             
-            api = x.X(self._config.token, self._config.cookie, self._config.proxy)
+            api = x.X(self._config.token, self._config.cookie, proxy)
 
             try:
                 with QMutexLocker(self._parent.mutex):
@@ -116,7 +128,7 @@ class DownloaderRunnable(QRunnable):
                         if total_video < 1:
                             self._parent.status_updated.emit(row, 'Không tìm thấy videos nào của người dùng này')
                         break
-
+                                        
                     with QMutexLocker(self._parent.mutex):
                         videos, cursor = api.get_video_urls(user_id, next_items)
 
@@ -129,7 +141,7 @@ class DownloaderRunnable(QRunnable):
                             break
                         
                         duration = x.milliseconds_to_seconds(video.duration_millis)
-                        print(video.url, duration, duration < self._parent.duration)
+                        print(video.url, duration)
 
                         if duration < self._parent.duration:
                             total_video = self._get_total_video(output)
