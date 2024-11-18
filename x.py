@@ -1,6 +1,7 @@
 import requests
 import re
 import json
+import re
 
 from urllib.parse import urlparse
 from dataclasses import dataclass
@@ -94,18 +95,32 @@ class X:
             data = response.json()
             entries =  data['data']['user']['result']['timeline_v2']['timeline']['instructions'][-1]['entries']
 
-            for item in entries[:-2]:
-                content = item['content']
-                if 'itemContent' in content:
-                    entities = content['itemContent']['tweet_results']['result']['legacy']['entities']
-                    if 'media'in entities:
-                        entities = entities['media'][-1]
-                        if 'video_info' in entities:
-                            video_info = entities['video_info']
-                            duration_millis = video_info['duration_millis']
-                            video_url = video_info['variants'][-1]['url']
+            string_value = re.findall('"string_value": "({.*?})",', json.dumps(data))
+            for value in string_value:
+                value = json.loads(value.replace('\\', ''))
+                media_entities: dict = value['media_entities']
 
+                for key in media_entities.keys():
+                    if 'video_info' in media_entities[key]:
+                        video_info = media_entities[key]['video_info']
+                        duration_millis = video_info['duration_millis']
+                        video_url = video_info['variants'][0]['url']
+
+                        if '.mp4' in video_url:
                             videos.append(VideoInfo(video_url, duration_millis))
+                            
+            # for item in entries[:-2]:
+            #     content = item['content']
+            #     if 'itemContent' in content:
+            #         entities = content['itemContent']['tweet_results']['result']['legacy']['entities']
+            #         if 'media'in entities:
+            #             entities = entities['media'][-1]
+            #             if 'video_info' in entities:
+            #                 video_info = entities['video_info']
+            #                 duration_millis = video_info['duration_millis']
+            #                 video_url = video_info['variants'][-1]['url']
+
+            #                 videos.append(VideoInfo(video_url, duration_millis))
 
             cursor = entries[-1]['content']['value']
         except Exception as ex:
