@@ -1,14 +1,31 @@
 import x
 import os
 import json
+import secrets
 
+from datetime import datetime, timedelta
+from dataclasses import dataclass, field
 from typing import Tuple
 from queue import Queue
-from PyQt5.QtCore import QThread, QThreadPool, QRunnable, pyqtSignal, QMutex, QMutexLocker, QReadWriteLock
+from PyQt5.QtCore import QThread, QThreadPool, QRunnable, pyqtSignal, QMutex, QMutexLocker
+
+
+@dataclass
+class Config:
+    token: str
+    cookie: str
+    time_to_wait_for_next_videos: int = field(init=False, default=15)
+    max_page: int = field(init=False, default=300)
+    proxy: str = field(init=False, default=None)
+
+    @classmethod
+    def load(cls) -> 'Config':
+        with open(os.path.join(os.getcwd(), 'config.json'), encoding='utf-8') as file:
+            return cls(**json.load(file))
 
 
 class DownloaderThread(QThread):
-    updated_downloaded = pyqtSignal(int, int)
+    status_updated = pyqtSignal(int, str)
 
     def __init__(self, usernames: Queue[Tuple[int, str]], max_videos: int, max_thread: int, duration: int):
         super().__init__()
@@ -18,7 +35,6 @@ class DownloaderThread(QThread):
         self._max_thread = max_thread
         self._duration = duration
         self._mutex =  QMutex()
-        self._rw_lock = QReadWriteLock()
         self._stop = False
         self._pool = QThreadPool()
         self._pool.setMaxThreadCount(99)
@@ -34,11 +50,7 @@ class DownloaderThread(QThread):
     @stop.setter
     def stop(self, value: bool):
         self._stop =  value
-
-    @property
-    def rw_lock(self) -> QReadWriteLock:
-        return self._rw_lock
-
+        
     @property
     def mutex(self) -> QMutex:
         return self._mutex
@@ -52,13 +64,10 @@ class DownloaderThread(QThread):
         return self._usernames
 
     def run(self):
-        with open(os.path.join(os.getcwd(), 'config.json'), encoding='utf-8') as file:
-            data = json.load(file)
-            token = data['token']
-            cookie = data['cookie']
+        config = Config.load()
 
         for _ in range(self._max_thread):
-            item = DownloaderRunnable(self, token, cookie)
+            item = DownloaderRunnable(self, config)
             self._pool.start(item)
 
             QThread.msleep(300)
@@ -67,12 +76,11 @@ class DownloaderThread(QThread):
 
 
 class DownloaderRunnable(QRunnable):
-    def __init__(self, parent: DownloaderThread, token: str, cookie: str):
+    def __init__(self, parent: DownloaderThread, config: Config):
         super().__init__()
 
         self._parent = parent
-        self._token = token
-        self._cookie = cookie
+        self._config = config
 
     def run(self):
         while not self._parent.stop:
@@ -82,14 +90,16 @@ class DownloaderRunnable(QRunnable):
 
                 row, username = self._parent.username.get_nowait()
             
-            api = x.X(self._token, self._cookie)
+            api = x.X(self._config.token, self._config.cookie, self._config.proxy)
 
             try:
-                user_id = api.get_rest_id(username)
+                with QMutexLocker(self._parent.mutex):
+                    user_id = api.get_rest_id(username)
+
                 print(username, user_id)
                 
                 if not user_id:
-                    self._parent.updated_downloaded.emit(row, -1)
+                    self._parent.status_updated.emit(row, 'Không thể lấy user_id')
                     continue
                 
                 output = os.path.join(os.getcwd(), 'output', username)
@@ -98,34 +108,67 @@ class DownloaderRunnable(QRunnable):
 
                 next_items = None
                 done = False
+                current_page = 0
 
                 while not done and not self._parent.stop:
-                    videos, cursor = api.get_video_urls(user_id, next_items)
+                    if current_page >= self._config.max_page:
+                        total_video = self._get_total_video(output)
+                        if total_video < 1:
+                            self._parent.status_updated.emit(row, 'Không tìm thấy videos nào của người dùng này')
+                        break
+
+                    with QMutexLocker(self._parent.mutex):
+                        videos, cursor = api.get_video_urls(user_id, next_items)
 
                     if not cursor:
-                        self._parent.updated_downloaded.emit(row, -1)
-                        return
+                        self._parent.status_updated.emit(row, 'Không thể lấy videos')
+                        break
                     
                     for video in videos:
-                        print(video.url, video.duration_millis)
-
                         if self._parent.stop:
                             break
+                        
+                        duration = x.milliseconds_to_seconds(video.duration_millis)
+                        print(video.url, duration, duration < self._parent.duration)
 
-                        if x.milliseconds_to_seconds(video.duration_millis) < self._parent.duration:
-                            files = os.listdir(output)
-                            total_video = len(files)
+                        if duration < self._parent.duration:
+                            total_video = self._get_total_video(output)
 
                             if total_video > 0:
-                                self._parent.updated_downloaded.emit(row, total_video)
+                                self._parent.status_updated.emit(row, f'Đã tải được {total_video} videos')
 
                             if total_video >= self._parent.max_video:
                                 done = True
                                 break
 
-                            file_name = total_video + 1 if not files else total_video
-                            x.download_video(video.url, os.path.join(output, f'{file_name}.mp4'))
+                            x.download_video(video.url, os.path.join(output, f'{secrets.token_hex(6)}.mp4'))
 
-                    next_items = cursor
+                    current_page += 20
+
+                    if not done:
+                        next_items = cursor
+
+                        end_time = datetime.now() + timedelta(seconds=self._config.time_to_wait_for_next_videos)
+                        total_video = self._get_total_video(output)
+                        while not self._parent.stop:
+                            if datetime.now() > end_time:
+                                break
+                            
+                            remaining_time = end_time - datetime.now()
+                            message = f'Đã tải được {total_video} videos. Sẽ tiếp tục sau {int(remaining_time.total_seconds())}'
+                            if total_video < 1:
+                                message = f'Sẽ tiếp tục sau {int(remaining_time.total_seconds())}'
+                            self._parent.status_updated.emit(row, message)
+
+                            QThread.msleep(1000)
+
+                total_video = self._get_total_video(output)
+                if total_video > 0:
+                    self._parent.status_updated.emit(row, f'Đã tải được {total_video} videos')
             except Exception as ex:
                 print(ex)
+
+    def _get_total_video(self, path: str) -> int:
+        files = os.listdir(path)
+        return len(files)
+    

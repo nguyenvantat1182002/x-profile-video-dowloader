@@ -30,7 +30,7 @@ class MainWindow(QMainWindow):
                     max_thread=self.spinBox_3.value(),
                     duration=self.spinBox_2.value()
                 )
-                self._dowloader.updated_downloaded.connect(lambda row, value: self.tableWidget.setItem(row, 1, QTableWidgetItem(str(value))))
+                self._dowloader.status_updated.connect(lambda row, value: self.tableWidget.setItem(row, 1, QTableWidgetItem(value)))
                 self._dowloader.finished.connect(self._task_finished)
                 self._dowloader.start()
             case 'Dừng':
