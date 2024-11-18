@@ -14,9 +14,9 @@ from PyQt5.QtCore import QThread, QThreadPool, QRunnable, pyqtSignal, QMutex, QM
 class Config:
     token: str
     cookie: str
-    time_to_wait_for_next_videos: int = field(init=False, default=15)
-    max_page: int = field(init=False, default=300)
-    proxy: str = field(init=False, default=None)
+    time_to_wait_for_next_videos: int = field(default=15)
+    max_page: int = field(default=300)
+    proxy: str = field(default=None)
 
     @classmethod
     def load(cls) -> 'Config':
